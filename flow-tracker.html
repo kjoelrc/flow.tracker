@@ -472,25 +472,50 @@ async function pullFromSheets() {
     const res = await fetch(SHEETS_URL + '?t=' + Date.now());
     const data = await res.json();
     if (data.status === 'ok' && Array.isArray(data.entries) && data.entries.length > 0) {
-      entries = data.entries;
+      // Coerce numeric fields — Sheets can return them as strings or 0 for blanks
+      entries = data.entries.map(e => {
+        const out = {...e};
+        // flows: must be a positive number or undefined
+        if (out.flows !== undefined && out.flows !== '') {
+          const n = Number(out.flows);
+          out.flows = (!isNaN(n) && n > 0) ? n : undefined;
+        } else { out.flows = undefined; }
+        // clockout: 0 is valid (no penalty), but empty string = undefined
+        if (out.clockout !== undefined && out.clockout !== '') {
+          out.clockout = Number(out.clockout) || 0;
+        } else { out.clockout = undefined; }
+        // arrival, sleep: numbers
+        if (out.arrival !== undefined && out.arrival !== '') out.arrival = Number(out.arrival);
+        else out.arrival = undefined;
+        if (out.sleep !== undefined && out.sleep !== '') out.sleep = Number(out.sleep);
+        else out.sleep = undefined;
+        // booleans
+        if (out.gym === 'true' || out.gym === true) out.gym = true;
+        else if (out.gym === 'false' || out.gym === false) out.gym = false;
+        else out.gym = undefined;
+        if (out.stretch === 'true' || out.stretch === true) out.stretch = true;
+        else if (out.stretch === 'false' || out.stretch === false) out.stretch = false;
+        else out.stretch = undefined;
+        return out;
+      });
       localStorage.setItem('flowtrack_v3', JSON.stringify(entries));
       setSyncStatus('ok');
       render();
     } else {
-      // Sheet is empty or new — push local data up
       if (entries.length > 0) pushToSheets();
       else setSyncStatus('ok');
     }
   } catch(err) {
     console.error('Sheets pull failed:', err);
     setSyncStatus('offline');
-    // Fall back to localStorage silently
   }
 }
 // entry shape: { date, flows, clockout, note, arrival, gym, stretch, sleep }
 // each field optional — saved independently per tab
 
-let isDark = true;
+const savedTheme = localStorage.getItem('flowtrack_theme') || 'dark';
+let isDark = savedTheme === 'dark';
+document.documentElement.setAttribute('data-theme', savedTheme);
 let chartViews = { work: 'week', full: 'month' };
 let chartOffsets = { work: 0, full: 0 };
 let chartDays = { work: [], full: [] };
@@ -620,6 +645,7 @@ function toggleTheme(){
   document.documentElement.setAttribute('data-theme',isDark?'dark':'light');
   document.getElementById('theme-icon').textContent=isDark?'☀️':'🌙';
   document.getElementById('theme-label').textContent=isDark?'Light':'Dark';
+  localStorage.setItem('flowtrack_theme', isDark?'dark':'light');
   renderCharts();
 }
 
@@ -1276,6 +1302,9 @@ function render(){renderStats();renderCharts();renderLog();}
 // ═══════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════
+// Sync theme UI to restored preference
+document.getElementById('theme-icon').textContent=isDark?'☀️':'🌙';
+document.getElementById('theme-label').textContent=isDark?'Light':'Dark';
 syncTabDates();
 previewClockIn();
 updateWorkPreview();
