@@ -473,10 +473,10 @@ async function pullFromSheets() {
     const data = await res.json();
     if (data.status === 'ok' && Array.isArray(data.entries) && data.entries.length > 0) {
       // Coerce numeric fields — Sheets can return them as strings or 0 for blanks
-      entries = data.entries.map(e => {
+      const remoteEntries = data.entries.map(e => {
         const out = {...e};
         // flows: must be a positive number or undefined
-        if (out.flows !== undefined && out.flows !== '') {
+        if (out.flows !== undefined && out.flows !== '' && out.flows !== 0) {
           const n = Number(out.flows);
           out.flows = (!isNaN(n) && n > 0) ? n : undefined;
         } else { out.flows = undefined; }
@@ -498,6 +498,37 @@ async function pullFromSheets() {
         else out.stretch = undefined;
         return out;
       });
+
+      // Merge: for each remote entry, if local has richer data (has flows), prefer local
+      // This prevents a bad sheet read from wiping good localStorage data
+      const localMap = {};
+      entries.forEach(e => { localMap[e.date] = e; });
+      entries = remoteEntries.map(remote => {
+        const local = localMap[remote.date];
+        if (!local) return remote;
+        // If remote is missing flows but local has them, keep local's numeric fields
+        const merged = {...remote};
+        if (remote.flows == null && local.flows != null) merged.flows = local.flows;
+        if (remote.clockout == null && local.clockout != null) merged.clockout = local.clockout;
+        if (remote.arrival == null && local.arrival != null) merged.arrival = local.arrival;
+        if (remote.sleep == null && local.sleep != null) merged.sleep = local.sleep;
+        if (remote.gym == null && local.gym != null) merged.gym = local.gym;
+        if (remote.stretch == null && local.stretch != null) merged.stretch = local.stretch;
+        return merged;
+      });
+
+      // Add any local entries that aren't in the sheet yet
+      remoteEntries.forEach(r => { if(!localMap[r.date]) {} }); // already covered above
+      entries.forEach(e => {
+        if (!remoteEntries.find(r => r.date === e.date)) entries.push(e);
+      });
+
+      // Deduplicate by date
+      const seen = {};
+      entries = entries.filter(e => { if(seen[e.date]) return false; seen[e.date]=true; return true; });
+      entries.sort((a,b) => a.date.localeCompare(b.date));
+
+      console.log('Pulled from Sheets:', JSON.stringify(entries));
       localStorage.setItem('flowtrack_v3', JSON.stringify(entries));
       setSyncStatus('ok');
       render();
