@@ -373,6 +373,16 @@
                 style="font-family:'Roboto Mono',monospace;font-size:0.72rem;padding:0.65rem;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all 0.2s;">No</button>
             </div>
             <input type="hidden" id="eod-gym" value="">
+            <!-- Home workout prompt — shown when No is selected -->
+            <div id="home-workout-row" style="display:none;margin-top:0.5rem;padding:0.6rem 0.75rem;border:1px solid var(--border);border-radius:8px;background:var(--surface2);">
+              <div style="font-family:'Roboto Mono',monospace;font-size:0.65rem;color:var(--muted);margin-bottom:0.5rem;letter-spacing:0.04em;">Did you work out at home?</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;">
+                <button type="button" id="home-yes-btn" onclick="setHomeWorkout(true)"
+                  style="font-family:'Roboto Mono',monospace;font-size:0.68rem;padding:0.5rem;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all 0.2s;">Yes — half credit</button>
+                <button type="button" id="home-no-btn" onclick="setHomeWorkout(false)"
+                  style="font-family:'Roboto Mono',monospace;font-size:0.68rem;padding:0.5rem;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all 0.2s;">No workout</button>
+              </div>
+            </div>
             <div class="check-row" id="stretch-row" style="opacity:0.4;pointer-events:none;">
               <input type="checkbox" id="eod-stretch" onchange="updateEodPreview()">
               <span>+5% bonus: Stretching post-workout</span>
@@ -428,7 +438,11 @@ const GOAL = 15;
 let entries = JSON.parse(localStorage.getItem('flowtrack_v3') || '[]');
 // Draft holds unsaved data for the current day being entered
 // Individual tab saves write here; Add Log commits to entries
-let draft = {};
+let draft = JSON.parse(localStorage.getItem('flowtrack_draft') || '{}');
+
+function saveDraft(){
+  localStorage.setItem('flowtrack_draft', JSON.stringify(draft));
+}
 
 // ── Google Sheets sync ──
 const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzqNoqSRhexWvBti7IfaC56omLaDqXrW1umQq946D7BfgUSfW23wIGOSt4uf8cRYzqk/exec';
@@ -541,7 +555,7 @@ async function pullFromSheets() {
     setSyncStatus('offline');
   }
 }
-// entry shape: { date, flows, clockout, note, arrival, gym, stretch, sleep }
+// entry shape: { date, flows, clockout, note, arrival, gym, homeWorkout, stretch, sleep }
 // each field optional — saved independently per tab
 
 const savedTheme = localStorage.getItem('flowtrack_theme') || 'dark';
@@ -653,7 +667,7 @@ function workScore(e){
 function lifestyleScore(e){
   // arrival (16.67%), gym+stretch (16.67%), sleep (16.67%) = 50% total weight
   if(e.arrival==null||e.gym==null||e.sleep==null)return null;
-  const gymPct=(e.gym?100:0)+(e.stretch?5:0);
+  const gymPct=(e.gym?100:e.homeWorkout?50:0)+(e.stretch?5:0);
   return(e.arrival+gymPct+e.sleep)/3;
 }
 function fullDayScore(e){
@@ -737,6 +751,7 @@ function saveClockIn(){
   const arrival=parseInt(arrivalVal);
   draft.date=date;
   draft.arrival=arrival;
+  saveDraft();
   markTabFilled(0,true);
   flashSaved('ci-save-btn');
   renderOverview();
@@ -781,6 +796,7 @@ function saveWork(){
   draft.flows=flows;
   draft.clockout=clockout;
   draft.note=note;
+  saveDraft();
   markTabFilled(1,true);
   flashSaved('w-save-btn');
   renderOverview();
@@ -795,18 +811,56 @@ function setGym(val){
   const yBtn=document.getElementById('gym-yes-btn');
   const nBtn=document.getElementById('gym-no-btn');
   const accent='var(--accent)';const accentText='var(--accent-text)';
-  const muted='var(--muted)';const border='var(--border)';const surface2='var(--surface2)';
+  const muted='var(--muted)';const border='var(--border)';
   if(val){
     yBtn.style.background=accent;yBtn.style.color=accentText;yBtn.style.borderColor=accent;
     nBtn.style.background='transparent';nBtn.style.color=muted;nBtn.style.borderColor=border;
+    // Hide home workout row and reset it
+    document.getElementById('home-workout-row').style.display='none';
+    resetHomeWorkout();
   }else{
     nBtn.style.background=accent;nBtn.style.color=accentText;nBtn.style.borderColor=accent;
     yBtn.style.background='transparent';yBtn.style.color=muted;yBtn.style.borderColor=border;
     document.getElementById('eod-stretch').checked=false;
+    // Show home workout prompt
+    document.getElementById('home-workout-row').style.display='block';
+    resetHomeWorkout();
   }
   const sr=document.getElementById('stretch-row');
   sr.style.opacity=val?'1':'0.4';
   sr.style.pointerEvents=val?'auto':'none';
+  updateEodPreview();
+}
+
+function resetHomeWorkout(){
+  document.getElementById('eod-gym').dataset.home='';
+  const hYes=document.getElementById('home-yes-btn');
+  const hNo=document.getElementById('home-no-btn');
+  const muted='var(--muted)';const border='var(--border)';
+  hYes.style.background='transparent';hYes.style.color=muted;hYes.style.borderColor=border;
+  hNo.style.background='transparent';hNo.style.color=muted;hNo.style.borderColor=border;
+}
+
+function setHomeWorkout(val){
+  document.getElementById('eod-gym').dataset.home=val?'yes':'no';
+  const hYes=document.getElementById('home-yes-btn');
+  const hNo=document.getElementById('home-no-btn');
+  const accent='var(--accent)';const accentText='var(--accent-text)';
+  const muted='var(--muted)';const border='var(--border)';
+  if(val){
+    hYes.style.background=accent;hYes.style.color=accentText;hYes.style.borderColor=accent;
+    hNo.style.background='transparent';hNo.style.color=muted;hNo.style.borderColor=border;
+    // Unlock stretch for home workout too
+    const sr=document.getElementById('stretch-row');
+    sr.style.opacity='1';sr.style.pointerEvents='auto';
+  }else{
+    hNo.style.background=accent;hNo.style.color=accentText;hNo.style.borderColor=accent;
+    hYes.style.background='transparent';hYes.style.color=muted;hYes.style.borderColor=border;
+    // Lock stretch, uncheck it
+    document.getElementById('eod-stretch').checked=false;
+    const sr=document.getElementById('stretch-row');
+    sr.style.opacity='0.4';sr.style.pointerEvents='none';
+  }
   updateEodPreview();
 }
 function updateEodPreview(){
@@ -818,9 +872,10 @@ function updateEodPreview(){
     lbl.textContent='Select gym & sleep to preview';pctEl.textContent='';return;
   }
   const gym=gymVal==='yes';
+  const homeWorkout=!gym&&document.getElementById('eod-gym').dataset.home==='yes';
   const stretch=document.getElementById('eod-stretch').checked;
   const sleep=parseInt(sleepVal);
-  const gymPct=(gym?100:0)+(stretch?5:0);
+  const gymPct=(gym?100:homeWorkout?50:0)+(stretch?5:0);
   const ls=Math.round((gymPct+sleep)/2);
   const c=spectrumColor(ls);
   dot.style.background=c;lbl.style.color=c;pctEl.style.color=c;
@@ -832,13 +887,16 @@ function saveEod(){
   const gymVal=document.getElementById('eod-gym').value;
   if(gymVal===''){alert('Please select Yes or No for gym.');return;}
   const gym=gymVal==='yes';
+  const homeWorkout=!gym&&document.getElementById('eod-gym').dataset.home==='yes';
   const stretch=document.getElementById('eod-stretch').checked;
   const sleep=parseInt(document.getElementById('eod-sleep').value);
   draft.date=date;
   draft.gym=gym;
+  draft.homeWorkout=homeWorkout;
   draft.stretch=stretch;
   draft.sleep=sleep;
   draft.eodNote=document.getElementById('eod-note').value.trim();
+  saveDraft();
   markTabFilled(2,true);
   flashSaved('eod-save-btn');
   renderOverview();
@@ -906,6 +964,7 @@ function commitLog(){
     clockout:draft.clockout,
     note:    draft.note,
     gym:     draft.gym,
+    homeWorkout: draft.homeWorkout,
     stretch: draft.stretch,
     sleep:   draft.sleep,
     eodNote: draft.eodNote,
@@ -913,7 +972,7 @@ function commitLog(){
   const btn=document.getElementById('add-log-btn');
   if(btn){btn.textContent='✓ Logged';btn.classList.add('btn-saved');btn.disabled=true;}
   try{render();}catch(err){console.error('render:',err);}
-  setTimeout(()=>resetForms(), 1900);
+  setTimeout(()=>{resetForms();localStorage.removeItem('flowtrack_draft');}, 1900);
 }
 
 // ═══════════════════════════════════════════════
@@ -1250,6 +1309,9 @@ function resetForms(){
   // Reset end of day
   document.getElementById('eod-note').value='';
   document.getElementById('eod-gym').value='';
+  document.getElementById('eod-gym').dataset.home='';
+  document.getElementById('home-workout-row').style.display='none';
+  resetHomeWorkout();
   document.getElementById('eod-stretch').checked=false;
   document.getElementById('eod-sleep').value='';
   const yBtn=document.getElementById('gym-yes-btn');
@@ -1261,6 +1323,7 @@ function resetForms(){
   updateEodPreview();
   // Clear draft
   draft={};
+  localStorage.removeItem('flowtrack_draft');
   // Clear filled dots
   for(let i=0;i<3;i++) markTabFilled(i,false);
   // Back to clock-in tab
@@ -1336,6 +1399,28 @@ function render(){renderStats();renderCharts();renderLog();}
 // Sync theme UI to restored preference
 document.getElementById('theme-icon').textContent=isDark?'☀️':'🌙';
 document.getElementById('theme-label').textContent=isDark?'Light':'Dark';
+
+// Restore draft form fields if a draft was in progress
+if(Object.keys(draft).length > 0){
+  if(draft.date){
+    document.getElementById('ci-date').value=draft.date;
+    document.getElementById('ov-date').value=draft.date;
+  }
+  if(draft.arrival!=null) document.getElementById('ci-arrival').value=draft.arrival;
+  if(draft.flows!=null)   document.getElementById('w-flows').value=draft.flows;
+  if(draft.clockout!=null)document.getElementById('w-clockout').value=draft.clockout;
+  if(draft.note)          document.getElementById('w-note').value=draft.note;
+  if(draft.eodNote)       document.getElementById('eod-note').value=draft.eodNote;
+  if(draft.sleep!=null)   document.getElementById('eod-sleep').value=draft.sleep;
+  if(draft.gym!=null)     setGym(draft.gym);
+  if(draft.homeWorkout)   setHomeWorkout(true);
+  if(draft.stretch)       { document.getElementById('eod-stretch').checked=true; }
+  // Restore tab filled dots
+  if(draft.arrival!=null) markTabFilled(0,true);
+  if(draft.flows!=null)   markTabFilled(1,true);
+  if(draft.gym!=null)     markTabFilled(2,true);
+}
+
 syncTabDates();
 previewClockIn();
 updateWorkPreview();
